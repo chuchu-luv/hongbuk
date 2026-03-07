@@ -57,6 +57,22 @@
       }, []);
       const minuteOptions = ['00', '10', '20', '30', '40', '50'];
 
+      // ✨ 서버에서 가져온 엉망이 된 데이터를 깔끔하게 청소해주는 해결사 함수
+      const sanitizeServerData = (data) => {
+        return data.map(r => {
+          let locStr = r.location ? String(r.location).replace(/^'/, '') : '';
+          
+          // 구글 시트가 5-1을 5월 1일로 멋대로 변환한 경우(T...Z 형식) 다시 복구합니다.
+          if (locStr.includes('T') && (locStr.endsWith('Z') || locStr.includes('+09:00'))) {
+            const d = new Date(locStr);
+            if (!isNaN(d.getTime())) {
+              locStr = `${d.getMonth() + 1}-${d.getDate()}`; // 월-일 형식으로 깔끔하게 원복
+            }
+          }
+          return { ...r, location: locStr };
+        });
+      };
+
       // ✨ 서버 통신 및 로컬 데이터 연동
       useEffect(() => {
         const loadInitialData = async () => {
@@ -68,11 +84,10 @@
 
           if (SCRIPT_URL) {
             try {
-              // ?t=시간값을 붙여 폰 브라우저가 데이터를 캐싱(기억)하는 것을 원천 차단
               const response = await fetch(`${SCRIPT_URL}?t=${new Date().getTime()}`);
-              const data = await response.json();
+              const rawData = await response.json();
+              const data = sanitizeServerData(rawData); // 데이터 청소!
               
-              // 서버에서 가져온 전체 데이터를 pastRecords에 미리 다 저장해둡니다 (자동완성 연동용)
               setPastRecords(data);
               
               const todayStr = `${currentDate.getFullYear()}년 ${currentDate.getMonth() + 1}월 ${currentDate.getDate()}일`;
@@ -103,7 +118,7 @@
                   name: String(r.name),
                   time: timeStr,
                   contact: r.contact || '',
-                  location: r.location || '',
+                  location: r.location, // 이미 위에서 청소됨
                   memo: r.memo || '',
                   status: r.status,
                   isLeft: isLeft,
@@ -132,15 +147,13 @@
         loadInitialData();
       }, [hourOptions]);
 
-      // ✨ 이름 기반 자동완성: 빈값을 우선하는 문제 해결!
+      // ✨ 이름 기반 자동완성
       useEffect(() => {
         if (name) {
-          // 오늘 현황, 과거 현황, 폰 캐시 3군데를 모두 뒤집니다.
           const todayRecord = [...records].reverse().find(r => r.name === name);
           const pastRecord = pastRecords.find(r => r.name === name);
           const cachedRecord = userMemory[name];
           
-          // ✨ 시트에 값이 비어있으면 폰 캐시에서 가져오고, 폰 캐시가 비어있으면 시트에서 가져오는 '똑똑한 합치기'
           const bestLocation = (todayRecord?.location) || (pastRecord?.location) || (cachedRecord?.location) || '';
           const bestContact = (todayRecord?.contact) || (pastRecord?.contact) || (cachedRecord?.contact) || '';
 
@@ -215,14 +228,14 @@
         setContact(formattedContact); 
         setIsEditing(false);
 
-        // 구글 시트로 전송
+        // 구글 시트로 전송 (교실 번호 앞에도 따옴표를 붙여 일반 텍스트로 보냅니다!)
         sendToGoogleSheet(actionType, {
           id: currentRecord.id,
           date: dateString,
           name: currentRecord.name,
           time: currentRecord.time,
           contact: currentRecord.contact,
-          location: currentRecord.location,
+          location: currentRecord.location ? "'" + currentRecord.location : "",
           memo: currentRecord.memo,
           status: '근무중'
         });
@@ -249,7 +262,7 @@
             name: myCurrentRecord.name,
             time: myCurrentRecord.time,
             contact: myCurrentRecord.contact,
-            location: myCurrentRecord.location,
+            location: myCurrentRecord.location ? "'" + myCurrentRecord.location : "",
             memo: myCurrentRecord.memo,
             status: `${leaveTimeStr} 퇴근완료`
           });
@@ -271,10 +284,9 @@
         
         setIsLoadingHistory(true);
         try {
-          // 모달에서도 폰 캐싱 방지용 파라미터 추가
           const response = await fetch(`${SCRIPT_URL}?t=${new Date().getTime()}`);
-          const data = await response.json();
-          setPastRecords(data);
+          const rawData = await response.json();
+          setPastRecords(sanitizeServerData(rawData));
         } catch (e) {
           console.log("기록 불러오기 실패:", e);
         }
@@ -625,7 +637,8 @@
                                 <div className="flex flex-col items-start gap-1">
                                   {(user.location || user.contact) && (
                                     <p className={`text-sm lg:text-base font-medium leading-relaxed ${user.isLeft ? 'text-stone-400' : 'text-stone-500'}`}>
-                                      {user.location} {user.location && user.contact && <span className="text-stone-300 mx-1">|</span>}
+                                      {/* ✨ 막대기(|)를 없애고 깔끔한 여백(mx-2)으로 분리 완료! */}
+                                      {user.location} {user.location && user.contact && <span className="mx-2"></span>}
                                       {user.contact && <span className={`inline-flex items-center gap-1 ${user.isLeft ? 'text-stone-400' : 'text-stone-500'}`}>📞 {user.contact}</span>}
                                     </p>
                                   )}
