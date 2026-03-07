@@ -23,7 +23,7 @@
     import { createRoot } from 'https://esm.sh/react-dom@18/client';
     import { Clock, MapPin, User, LogOut, Edit2, AlertCircle, CheckCircle2, Star, ChevronLeft, X, MessageSquare, Phone } from 'https://esm.sh/lucide-react@0.292.0';
 
-    // 🔥 구글 시트 URL
+    // 🔥 선생님이 발급받으신 진짜 구글 시트 URL
     const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxwObNytd1SykbETn2__oaYEZ86dbkF3OHQmfv41kWlS6YOsPUkF1qmiBZykPJBSL_H/exec"; 
 
     function App() {
@@ -329,19 +329,19 @@
             
             {/* 헤더 */}
             <header className="text-center pt-6 pb-6 lg:pb-8">
-              {/* ✨ 제목 사이즈를 살짝 줄였습니다 */}
+              {/* ✨ 제목 수정 완료 */}
               <h1 className="text-4xl lg:text-5xl font-title text-rose-500 mb-4 drop-shadow-sm flex items-center justify-center gap-2 transition-all">
-               🏫홍북초 야근 현황 🌃
+                🏫 홍북초 야근 현황 🌃
               </h1>
               
               <button 
                 onClick={loadHistory} 
-                className="inline-flex items-center justify-center gap-1.5 bg-white px-5 py-2.5 rounded-full shadow-md border-[3px] border-rose-100 hover:bg-rose-50 transition-colors group"
+                className="inline-flex items-center justify-center gap-1.5 bg-rose-50 px-5 py-2.5 rounded-full shadow-md border-[3px] border-rose-100 hover:bg-rose-100 transition-colors group"
                 title="지난 내역 보기"
               >
-                <ChevronLeft className="w-5 h-5 text-stone-400 group-hover:text-rose-400 transition-colors" />
-                {/* ✨ 날짜 사이즈를 살짝 줄였습니다 */}
-                <span className="text-lg font-date text-stone-600 tracking-wide pt-1 pr-1">{dateString}</span>
+                <ChevronLeft className="w-5 h-5 text-rose-400 group-hover:text-rose-500 transition-colors" />
+                {/* ✨ 칙칙한 회색을 빼고 예쁜 핑크색으로 수정 완료 */}
+                <span className="text-lg font-date text-rose-500 tracking-wide pt-1 pr-1">{dateString}</span>
               </button>
             </header>
 
@@ -590,8 +590,8 @@
                 
                 {displayUsers.filter(u => !u.isLeft).length > 0 && (
                   <div className="mt-5 p-4 bg-orange-50/80 rounded-xl flex items-start gap-3 text-stone-600 text-2xl border border-orange-100 shadow-sm">
-                    <AlertCircle className="w-7 h-7 text-yellow-500 shrink-0 mt-0.5" />
-                    <p><strong>📢 최종담당 교직원</strong>은 꼭 전원 차단, 세콤 셋팅 부탁드립니다. 🚨</p>
+                    <span className="text-2xl mt-0.5">📢</span>
+                    <p><strong>최종담당 교직원</strong>은 꼭 전원 차단, 세콤 셋팅 부탁드립니다. 🚨</p>
                   </div>
                 )}
               </div>
@@ -635,17 +635,17 @@
                         const displayTime = isLeft ? record.status.split(' ')[0] : formatShortTime(record.time);
                         
                         return (
-                          // 🔥 날짜, 이름, 시간 모두 이름과 똑같은 폰트(강원교육체)로, 2xl 사이즈로 통일했습니다. 
-                          <div key={i} className="flex items-center justify-between py-2 lg:py-3 border-b border-stone-100 last:border-0 hover:bg-rose-50/50 transition-colors px-2 rounded-xl">
-                            <div className="flex items-center gap-2 lg:gap-4 w-full">
-                              <span className="text-2xl text-stone-400 w-[110px] shrink-0 text-left">{formatShortDate(record.date)}</span>
-                              <span className="text-2xl font-bold text-stone-700 w-[70px] shrink-0 truncate">{record.name}</span>
-                              <span className={`text-2xl tracking-tight w-[60px] shrink-0 text-center ${isLeft ? 'text-stone-400' : 'text-rose-500'}`}>
+                          // 🔥 모바일 화면에서 안 겹치도록 너비(w-[px])를 줄이고 간격(gap)을 좁혔습니다!
+                          <div key={i} className="flex items-center justify-between py-2 lg:py-3 border-b border-stone-100 last:border-0 hover:bg-rose-50/50 transition-colors px-1 lg:px-2 rounded-xl">
+                            <div className="flex items-center gap-1.5 lg:gap-4 w-full">
+                              <span className="text-2xl text-stone-400 w-[90px] lg:w-[110px] shrink-0 text-left">{formatShortDate(record.date)}</span>
+                              <span className="text-2xl font-bold text-stone-700 w-[55px] lg:w-[70px] shrink-0 truncate">{record.name}</span>
+                              <span className={`text-2xl tracking-tight shrink-0 text-left ${isLeft ? 'text-stone-400' : 'text-rose-500'}`}>
                                 {displayTime}
                               </span>
                               
-                              <div className="flex-1 flex justify-end">
-                                <span className={`text-xl font-bold px-3 py-1 rounded-full shrink-0 shadow-sm ${
+                              <div className="flex-1 flex justify-end pl-1">
+                                <span className={`text-lg lg:text-xl font-bold px-2 lg:px-3 py-1 rounded-full shrink-0 shadow-sm ${
                                   isLeft ? 'bg-stone-100 text-stone-500' : 'bg-rose-100 text-rose-500'
                                 }`}>
                                   {isLeft ? '퇴근완료' : '근무중'}
