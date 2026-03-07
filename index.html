@@ -90,10 +90,68 @@
         });
       };
 
-      // ✨ 서버 및 로컬 데이터 동기화
+      // ✨ 서버 및 로컬 데이터 동기화 (30초 자동 새로고침 타이머 추가!)
       useEffect(() => {
+        // 서버에서 최신 데이터를 가져오는 함수
+        const fetchUpdates = async () => {
+          if (!SCRIPT_URL) return null;
+          try {
+            const response = await fetch(`${SCRIPT_URL}?t=${new Date().getTime()}`);
+            const rawData = await response.json();
+            const data = sanitizeServerData(rawData);
+            
+            setPastRecords(data);
+            
+            const todayStr = `${currentDate.getFullYear()}년 ${currentDate.getMonth() + 1}월 ${currentDate.getDate()}일`;
+
+            const todayRecords = data.filter(r => {
+              if (!r.date) return false;
+              const dStr = String(r.date).replace(/'/g, '').trim();
+              if (dStr.includes(todayStr) || dStr.includes(dateString)) return true;
+              if (dStr.includes('T')) {
+                const d = new Date(dStr);
+                if (!isNaN(d.getTime())) {
+                  return d.getFullYear() === currentDate.getFullYear() &&
+                         d.getMonth() === currentDate.getMonth() &&
+                         d.getDate() === currentDate.getDate();
+                }
+              }
+              return false;
+            }).map(r => {
+              const isLeft = String(r.status || '').includes('퇴근');
+              const leaveTime = isLeft ? String(r.status).split(' ')[0] : null;
+              
+              let timeStr = String(r.time || '');
+              if (timeStr.includes('T')) {
+                const d = new Date(timeStr);
+                if (!isNaN(d.getTime())) {
+                  timeStr = `${d.getHours().toString().padStart(2, '0')}:${d.getMinutes().toString().padStart(2, '0')}`;
+                }
+              }
+
+              return {
+                id: String(r.id),
+                name: String(r.name || ''),
+                time: timeStr,
+                contact: String(r.contact || ''),
+                location: r.location || '',
+                memo: r.memo || '',
+                status: r.status || '',
+                isLeft: isLeft,
+                leaveTime: leaveTime
+              };
+            });
+
+            setRecords(todayRecords);
+            return todayRecords;
+          } catch (e) {
+            console.error("서버 데이터 로드 실패", e);
+            return null;
+          }
+        };
+
+        // 처음 켜졌을 때 초기화
         const loadInitialData = async () => {
-          // 안전하게 로컬 스토리지 불러오기 (에러 방어막 적용)
           const savedMemory = getSafeObject('userMemory');
           const savedMyId = localStorage.getItem('myRecordId');
           setUserMemory(savedMemory);
@@ -103,70 +161,15 @@
           }
           setHour(hourOptions[0]);
 
-          if (SCRIPT_URL) {
-            try {
-              // ?t= 파라미터로 폰 사파리/크롬 캐시 무효화 완벽 적용
-              const response = await fetch(`${SCRIPT_URL}?t=${new Date().getTime()}`);
-              const rawData = await response.json();
-              const data = sanitizeServerData(rawData);
-              
-              setPastRecords(data);
-              
-              const todayStr = `${currentDate.getFullYear()}년 ${currentDate.getMonth() + 1}월 ${currentDate.getDate()}일`;
-
-              const todayRecords = data.filter(r => {
-                if (!r.date) return false;
-                const dStr = String(r.date).replace(/'/g, '').trim();
-                if (dStr.includes(todayStr) || dStr.includes(dateString)) return true;
-                if (dStr.includes('T')) {
-                  const d = new Date(dStr);
-                  if (!isNaN(d.getTime())) {
-                    return d.getFullYear() === currentDate.getFullYear() &&
-                           d.getMonth() === currentDate.getMonth() &&
-                           d.getDate() === currentDate.getDate();
-                  }
-                }
-                return false;
-              }).map(r => {
-                const isLeft = String(r.status || '').includes('퇴근');
-                const leaveTime = isLeft ? String(r.status).split(' ')[0] : null;
-                
-                let timeStr = String(r.time || '');
-                if (timeStr.includes('T')) {
-                  const d = new Date(timeStr);
-                  if (!isNaN(d.getTime())) {
-                    timeStr = `${d.getHours().toString().padStart(2, '0')}:${d.getMinutes().toString().padStart(2, '0')}`;
-                  }
-                }
-
-                return {
-                  id: String(r.id),
-                  name: String(r.name || ''),
-                  time: timeStr,
-                  contact: String(r.contact || ''),
-                  location: r.location || '',
-                  memo: r.memo || '',
-                  status: r.status || '',
-                  isLeft: isLeft,
-                  leaveTime: leaveTime
-                };
-              });
-
-              setRecords(todayRecords);
-              
-              // ✨ 백지 에러를 발생시킨 주범 완벽 해결: 
-              // 어제 기록 아이디가 캐시에 남아있으면 미련 없이 삭제!
-              if (savedMyId) {
-                const myServerStatus = todayRecords.find(tr => tr.id === savedMyId);
-                if (!myServerStatus || myServerStatus.isLeft) {
-                  setMyRecordId(null);
-                  localStorage.removeItem('myRecordId');
-                }
+          const todayRecords = await fetchUpdates();
+          
+          if (todayRecords) {
+            if (savedMyId) {
+              const myServerStatus = todayRecords.find(tr => tr.id === savedMyId);
+              if (!myServerStatus || myServerStatus.isLeft) {
+                setMyRecordId(null);
+                localStorage.removeItem('myRecordId');
               }
-            } catch (e) {
-              console.error("서버 데이터 로드 실패", e);
-              // 통신 실패 시에도 뻗지 않고 빈 화면 대신 안전한 데이터 로드
-              setRecords(getSafeArray('schoolRecords'));
             }
           } else {
             setRecords(getSafeArray('schoolRecords'));
@@ -174,7 +177,26 @@
         };
 
         loadInitialData();
-      }, [hourOptions]);
+
+        // ✨ 30초(30000ms)마다 백그라운드에서 조용히 새로고침하는 타이머
+        const intervalId = setInterval(async () => {
+          const freshRecords = await fetchUpdates();
+          
+          // 만약 폰에서 퇴근을 눌렀다면, PC 화면에서도 내 폼을 자동으로 '퇴근 완료' 상태(폼 초기화)로 변경
+          setMyRecordId(prevId => {
+            if (prevId && freshRecords) {
+              const myServerStatus = freshRecords.find(tr => tr.id === prevId);
+              if (!myServerStatus || myServerStatus.isLeft) {
+                localStorage.removeItem('myRecordId');
+                return null;
+              }
+            }
+            return prevId;
+          });
+        }, 30000); // 30초마다 갱신
+
+        return () => clearInterval(intervalId); // 컴포넌트 종료 시 타이머 청소
+      }, [hourOptions, currentDate, dateString]);
 
       // 배열이 아닐 경우 뻗지 않도록 무조건 배열로 강제 보장하는 방어막!
       const safeRecords = Array.isArray(records) ? records : [];
