@@ -1,0 +1,679 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>홍북초 야근 현황</title>
+  
+  <!-- Tailwind CSS 로드 -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  
+  <!-- Babel (브라우저에서 React 코드를 읽을 수 있게 해주는 도구) -->
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+</head>
+<body>
+  <!-- 🤫 all copyright reserved BOHAE -->
+  
+  <!-- 앱이 그려질 도화지 -->
+  <div id="root"></div>
+
+  <!-- React 및 앱 로직 시작 -->
+  <script type="text/babel" data-type="module">
+    import React, { useState, useEffect, useMemo } from 'https://esm.sh/react@18';
+    import { createRoot } from 'https://esm.sh/react-dom@18/client';
+    import { Clock, MapPin, User, LogOut, Edit2, AlertCircle, CheckCircle2, Star, ChevronLeft, X, MessageSquare, Phone } from 'https://esm.sh/lucide-react@0.292.0';
+
+    // 🔥 구글 시트 URL
+    const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxwObNytd1SykbETn2__oaYEZ86dbkF3OHQmfv41kWlS6YOsPUkF1qmiBZykPJBSL_H/exec"; 
+
+    function App() {
+      const [currentDate, setCurrentDate] = useState(new Date());
+      const [name, setName] = useState('');
+      const [location, setLocation] = useState('');
+      const [contact, setContact] = useState(''); 
+      const [memo, setMemo] = useState('');
+      const [hour, setHour] = useState('');
+      const [minute, setMinute] = useState('00');
+      
+      const [records, setRecords] = useState([]); 
+      const [myRecordId, setMyRecordId] = useState(null); 
+      const [userMemory, setUserMemory] = useState({}); 
+      const [isEditing, setIsEditing] = useState(false);
+      
+      // 지난 내역 관련 상태
+      const [showHistory, setShowHistory] = useState(false); 
+      const [pastRecords, setPastRecords] = useState([]);
+      const [isLoadingHistory, setIsLoadingHistory] = useState(false);
+
+      const days = ['일', '월', '화', '수', '목', '금', '토'];
+      const dateString = `${currentDate.getFullYear()}년 ${currentDate.getMonth() + 1}월 ${currentDate.getDate()}일 ${days[currentDate.getDay()]}요일`;
+
+      const hourOptions = useMemo(() => {
+        const hours = [];
+        for (let i = 9; i <= 23; i++) {
+          hours.push(i.toString().padStart(2, '0'));
+        }
+        return hours;
+      }, []);
+      const minuteOptions = ['00', '10', '20', '30', '40', '50'];
+
+      // 로컬 데이터 초기 불러오기
+      useEffect(() => {
+        const savedRecords = JSON.parse(localStorage.getItem('schoolRecords')) || [];
+        const savedMemory = JSON.parse(localStorage.getItem('userMemory')) || {};
+        const savedMyId = localStorage.getItem('myRecordId');
+        
+        setRecords(savedRecords);
+        setUserMemory(savedMemory);
+        if (savedMyId) setMyRecordId(savedMyId);
+        setHour(hourOptions[0]);
+      }, [hourOptions]);
+
+      // 이름 기반 자동완성
+      useEffect(() => {
+        if (name) {
+          if (userMemory[name]) {
+            setLocation(userMemory[name].location || '');
+            setContact(userMemory[name].contact || '');
+          } else {
+            const pastRecord = [...records].reverse().find(r => r.name === name);
+            if (pastRecord) {
+              setLocation(pastRecord.location || '');
+              setContact(pastRecord.contact || '');
+            } else {
+              setLocation('');
+              setContact('');
+            }
+          }
+        } else {
+          setLocation('');
+          setContact('');
+        }
+      }, [name, records, userMemory]);
+
+      // 📱 핸드폰 번호 자동 하이픈(-) 변환기
+      const formatPhoneNumber = (num) => {
+        if (!num) return '';
+        const cleaned = ('' + num).replace(/\D/g, ''); 
+        const match = cleaned.match(/^(\d{2,3})(\d{3,4})(\d{4})$/);
+        if (match) {
+          return `${match[1]}-${match[2]}-${match[3]}`;
+        }
+        return cleaned;
+      };
+
+      // 구글 시트로 데이터 보내는 함수
+      const sendToGoogleSheet = async (action, recordData) => {
+        if (!SCRIPT_URL) return; 
+        try {
+          await fetch(SCRIPT_URL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+            body: JSON.stringify({ action: action, record: recordData })
+          });
+        } catch (e) {
+          console.log("시트 전송 에러:", e);
+        }
+      };
+
+      // 저장 로직
+      const handleSave = () => {
+        if (!name || !hour || !contact) {
+          alert("이름, 시간, 핸드폰 번호를 모두 입력해주세요! 🥺");
+          return;
+        }
+
+        const formattedContact = formatPhoneNumber(contact);
+        const timeString = `${hour}:${minute}`;
+        
+        const newMemory = { ...userMemory, [name]: { location, contact: formattedContact } };
+        setUserMemory(newMemory);
+        localStorage.setItem('userMemory', JSON.stringify(newMemory));
+
+        let updatedRecords;
+        let recordId;
+        let actionType;
+        let currentRecord;
+
+        if (myRecordId) {
+          recordId = myRecordId;
+          actionType = 'update';
+          currentRecord = { id: recordId, name, location, contact: formattedContact, memo, time: timeString, isLeft: false };
+          updatedRecords = records.map(r => r.id === myRecordId ? currentRecord : r);
+        } else {
+          recordId = Date.now().toString();
+          actionType = 'save';
+          currentRecord = { id: recordId, name, location: location || '', contact: formattedContact || '', memo: memo || '', time: timeString, isLeft: false };
+          updatedRecords = [...records, currentRecord];
+          setMyRecordId(recordId);
+          localStorage.setItem('myRecordId', recordId);
+        }
+
+        setRecords(updatedRecords);
+        localStorage.setItem('schoolRecords', JSON.stringify(updatedRecords));
+        setContact(formattedContact); 
+        setIsEditing(false);
+
+        // 구글 시트로 전송
+        sendToGoogleSheet(actionType, {
+          id: currentRecord.id,
+          date: dateString,
+          name: currentRecord.name,
+          time: currentRecord.time,
+          contact: currentRecord.contact,
+          location: currentRecord.location,
+          memo: currentRecord.memo,
+          status: '근무중'
+        });
+      };
+
+      // 퇴근 로직
+      const handleLeave = () => {
+        const now = new Date();
+        const leaveTimeStr = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
+
+        const myCurrentRecord = records.find(r => r.id === myRecordId);
+        const updatedRecords = records.map(r => 
+          r.id === myRecordId ? { ...r, isLeft: true, leaveTime: leaveTimeStr } : r
+        );
+        
+        setRecords(updatedRecords);
+        localStorage.setItem('schoolRecords', JSON.stringify(updatedRecords));
+        
+        // 구글 시트에 '퇴근' 업데이트 전송
+        if (myCurrentRecord) {
+          sendToGoogleSheet('update', {
+            id: myCurrentRecord.id,
+            date: dateString,
+            name: myCurrentRecord.name,
+            time: myCurrentRecord.time,
+            contact: myCurrentRecord.contact,
+            location: myCurrentRecord.location,
+            memo: myCurrentRecord.memo,
+            status: `${leaveTimeStr} 퇴근완료`
+          });
+        }
+
+        setMyRecordId(null);
+        setIsEditing(false);
+        localStorage.removeItem('myRecordId');
+        setName('');
+        setLocation('');
+        setContact('');
+        setMemo('');
+      };
+
+      // 지난 내역 불러오기 로직 (구글 시트 연동)
+      const loadHistory = async () => {
+        setShowHistory(true);
+        if (!SCRIPT_URL) return; 
+        
+        setIsLoadingHistory(true);
+        try {
+          const response = await fetch(SCRIPT_URL);
+          const data = await response.json();
+          // 데이터를 불러온 후 역순(최신순)인지 확인하고 확실히 정렬합니다.
+          setPastRecords(data);
+        } catch (e) {
+          console.log("기록 불러오기 실패:", e);
+        }
+        setIsLoadingHistory(false);
+      };
+
+      // 📅 시트에서 가져온 지저분한 날짜를 예쁘게 변환하는 함수
+      const formatShortDate = (dateStr) => {
+        if (!dateStr) return '';
+        if (dateStr.includes('T')) {
+          const d = new Date(dateStr);
+          const dayNames = ['일', '월', '화', '수', '목', '금', '토'];
+          return `${d.getFullYear().toString().slice(2)}.${d.getMonth() + 1}.${d.getDate()}(${dayNames[d.getDay()]})`;
+        }
+        const regex = /(\d{4})년\s*(\d{1,2})월\s*(\d{1,2})일\s*(.)요일/;
+        const match = dateStr.match(regex);
+        if (match) {
+          return `${match[1].slice(2)}.${match[2]}.${match[3]}(${match[4]})`;
+        }
+        return dateStr;
+      };
+
+      // ⏰ 시트에서 멋대로 변환한 시간(1899-12-30T...)을 예쁘게 변환하는 함수
+      const formatShortTime = (timeStr) => {
+        if (!timeStr) return '';
+        if (timeStr.includes('T')) {
+          const d = new Date(timeStr);
+          return `${d.getHours().toString().padStart(2, '0')}:${d.getMinutes().toString().padStart(2, '0')}`;
+        }
+        return timeStr;
+      };
+
+      const latestTime = useMemo(() => {
+        const activeRecords = records.filter(r => !r.isLeft);
+        if (activeRecords.length === 0) return null;
+
+        const timesInMinutes = activeRecords.map(r => {
+          const [h, m] = r.time.split(':').map(Number);
+          return h * 60 + m;
+        });
+        
+        const maxTime = Math.max(...timesInMinutes);
+        const maxH = Math.floor(maxTime / 60).toString().padStart(2, '0');
+        const maxM = (maxTime % 60).toString().padStart(2, '0');
+        return `${maxH}:${maxM}`;
+      }, [records]);
+
+      const myRecord = records.find(r => r.id === myRecordId);
+      const displayUsers = [...records].sort((a, b) => a.time.localeCompare(b.time));
+      const showForm = !myRecordId || myRecord?.isLeft || isEditing;
+      const amILatest = myRecord && !myRecord.isLeft && myRecord.time === latestTime;
+
+      const avatarColors = [
+        'bg-rose-100 text-rose-600 border-rose-200',
+        'bg-orange-100 text-orange-600 border-orange-200',
+        'bg-emerald-100 text-emerald-600 border-emerald-200',
+        'bg-sky-100 text-sky-600 border-sky-200',
+        'bg-purple-100 text-purple-600 border-purple-200'
+      ];
+
+      return (
+        <div className="min-h-screen bg-gradient-to-br from-[#fcf3d9] via-[#f7d6e0] to-[#d6f0e6] text-stone-800 p-4 selection:bg-rose-200 relative overflow-x-hidden font-body">
+          <style>{`
+            @font-face {
+              font-family: 'KerisKeduLine';
+              src: url('https://cdn.jsdelivr.net/gh/projectnoonnu/2601-3@1.0/KERISKEDU_Line.woff2') format('woff2');
+              font-weight: normal;
+              font-display: swap;
+            }
+            @font-face {
+              font-family: 'CookieRun';
+              src: url('https://cdn.jsdelivr.net/gh/projectnoonnu/noonfonts_2001@1.1/CookieRun-Regular.woff') format('woff');
+              font-weight: normal;
+              font-display: swap;
+            }
+            @font-face {
+              font-family: 'GangwonEducationSaeum';
+              src: url('https://cdn.jsdelivr.net/gh/projectnoonnu/noonfonts_2201-2@1.0/GangwonEduSaeeum_OTFMediumA.woff') format('woff');
+              font-weight: normal;
+              font-display: swap;
+            }
+            .font-title { font-family: 'KerisKeduLine', sans-serif; }
+            .font-date { font-family: 'CookieRun', sans-serif; }
+            .font-body { 
+              font-family: 'GangwonEducationSaeum', sans-serif; 
+              font-size: 1.6rem; 
+              letter-spacing: 0.5px;
+            }
+            
+            /* ✨ 세련된 연핑크 스크롤바 */
+            ::-webkit-scrollbar {
+              width: 8px;
+            }
+            ::-webkit-scrollbar-track {
+              background: transparent;
+            }
+            ::-webkit-scrollbar-thumb {
+              background: #fcd2d9;
+              border-radius: 10px;
+            }
+            ::-webkit-scrollbar-thumb:hover {
+              background: #f8b4c0;
+            }
+          `}</style>
+
+          {/* 🤫 비밀 요소 (화면에 보이지 않음) */}
+          <div style={{ display: 'none' }} aria-hidden="true">
+            all copyright reserved BOHAE
+          </div>
+
+          {/* 반응형 레이아웃: 모바일에서는 max-w-md(세로), PC에서는 lg:max-w-5xl(가로 넓게) */}
+          <div className="max-w-md lg:max-w-5xl mx-auto relative z-10 px-1 lg:px-4">
+            
+            {/* 헤더 */}
+            <header className="text-center pt-6 pb-6 lg:pb-8">
+              {/* ✨ 제목 사이즈를 살짝 줄였습니다 */}
+              <h1 className="text-4xl lg:text-5xl font-title text-rose-500 mb-4 drop-shadow-sm flex items-center justify-center gap-2 transition-all">
+               🏫홍북초 야근 현황 🌃
+              </h1>
+              
+              <button 
+                onClick={loadHistory} 
+                className="inline-flex items-center justify-center gap-1.5 bg-white px-5 py-2.5 rounded-full shadow-md border-[3px] border-rose-100 hover:bg-rose-50 transition-colors group"
+                title="지난 내역 보기"
+              >
+                <ChevronLeft className="w-5 h-5 text-stone-400 group-hover:text-rose-400 transition-colors" />
+                {/* ✨ 날짜 사이즈를 살짝 줄였습니다 */}
+                <span className="text-lg font-date text-stone-600 tracking-wide pt-1 pr-1">{dateString}</span>
+              </button>
+            </header>
+
+            {/* ✨ 반응형 핵심: grid를 사용해서 PC 화면일 때 좌/우 2단으로 나눕니다 */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 lg:gap-8 items-start">
+              
+              {/* 왼쪽: 내 상태 입력 / 확인 카드 */}
+              <div className="bg-white/95 backdrop-blur-sm rounded-[2rem] p-6 shadow-xl border-4 border-rose-50">
+                {showForm ? (
+                  <div className="space-y-4">
+                    <h2 className="text-3xl font-bold text-stone-700 flex items-center gap-2 justify-center mb-5 bg-rose-50 py-2 rounded-2xl">
+                      <Star className="w-5 h-5 text-yellow-400 fill-yellow-400" />
+                      선생님, 언제 퇴근하시나요?
+                    </h2>
+                    
+                    <div className="space-y-3">
+                      <div className="flex bg-rose-50/50 rounded-2xl border-2 border-rose-100 overflow-hidden focus-within:border-rose-300 focus-within:bg-white transition-all">
+                        <div className="px-4 flex items-center bg-rose-100/50 text-rose-400">
+                          <User className="w-5 h-5" />
+                        </div>
+                        <input 
+                          type="text" 
+                          placeholder="이름 (필수)" 
+                          className="w-full bg-transparent p-3 outline-none text-stone-700 placeholder-stone-400 font-bold text-2xl"
+                          value={name}
+                          onChange={(e) => setName(e.target.value)}
+                        />
+                      </div>
+
+                      <div className="flex gap-2">
+                        <div className="flex-1 flex bg-rose-50/50 rounded-2xl border-2 border-rose-100 overflow-hidden focus-within:border-rose-300 focus-within:bg-white transition-all">
+                          <div className="px-4 flex items-center bg-rose-100/50 text-rose-400">
+                            <Clock className="w-5 h-5" />
+                          </div>
+                          <select 
+                            className="w-full bg-transparent p-3 outline-none text-stone-700 font-bold text-2xl appearance-none cursor-pointer"
+                            value={hour}
+                            onChange={(e) => setHour(e.target.value)}
+                          >
+                            {hourOptions.map(h => <option key={h} value={h}>{h}시</option>)}
+                          </select>
+                        </div>
+                        <div className="flex-1 flex bg-rose-50/50 rounded-2xl border-2 border-rose-100 overflow-hidden focus-within:border-rose-300 focus-within:bg-white transition-all">
+                          <select 
+                            className="w-full bg-transparent p-3 outline-none text-stone-700 font-bold text-2xl appearance-none cursor-pointer"
+                            value={minute}
+                            onChange={(e) => setMinute(e.target.value)}
+                          >
+                            {minuteOptions.map(m => <option key={m} value={m}>{m}분</option>)}
+                          </select>
+                        </div>
+                      </div>
+
+                      <div className="flex bg-rose-50/50 rounded-2xl border-2 border-rose-100 overflow-hidden focus-within:border-rose-300 focus-within:bg-white transition-all">
+                        <div className="px-4 flex items-center bg-rose-100/50 text-rose-400">
+                          <Phone className="w-5 h-5" />
+                        </div>
+                        <input 
+                          type="text" 
+                          placeholder="핸드폰 번호 (필수)" 
+                          className="w-full bg-transparent p-3 outline-none text-stone-700 placeholder-stone-400 text-2xl"
+                          value={contact}
+                          onChange={(e) => setContact(e.target.value)}
+                          onBlur={(e) => setContact(formatPhoneNumber(e.target.value))} 
+                        />
+                      </div>
+
+                      <div className="flex bg-rose-50/50 rounded-2xl border-2 border-rose-100 overflow-hidden focus-within:border-rose-300 focus-within:bg-white transition-all">
+                        <div className="px-4 flex items-center bg-rose-100/50 text-rose-400">
+                          <MapPin className="w-5 h-5" />
+                        </div>
+                        <input 
+                          type="text" 
+                          placeholder="교실/부서 (선택)" 
+                          className="w-full bg-transparent p-3 outline-none text-stone-700 placeholder-stone-400 text-2xl"
+                          value={location}
+                          onChange={(e) => setLocation(e.target.value)}
+                        />
+                      </div>
+
+                      <div className="flex bg-rose-50/50 rounded-2xl border-2 border-rose-100 overflow-hidden focus-within:border-rose-300 focus-within:bg-white transition-all">
+                        <div className="px-4 flex items-center bg-rose-100/50 text-rose-400">
+                          <MessageSquare className="w-5 h-5" />
+                        </div>
+                        <input 
+                          type="text" 
+                          placeholder="간단한 메모 (선택)" 
+                          className="w-full bg-transparent p-3 outline-none text-stone-700 placeholder-stone-400 text-2xl"
+                          value={memo}
+                          onChange={(e) => setMemo(e.target.value)}
+                        />
+                      </div>
+
+                      <button 
+                        onClick={handleSave}
+                        className="w-full bg-rose-400 hover:bg-rose-500 text-white font-bold text-3xl pt-4 pb-3 rounded-2xl shadow-lg shadow-rose-200 transition-all mt-4 transform hover:scale-[1.02] active:scale-95"
+                      >
+                        {isEditing ? '수정 완료' : '저장하기 꾹!'}
+                      </button>
+                      
+                      {isEditing && (
+                        <button 
+                          onClick={() => setIsEditing(false)}
+                          className="w-full bg-stone-100 hover:bg-stone-200 text-stone-500 font-bold text-2xl pt-3 pb-2 rounded-2xl transition-all"
+                        >
+                          수정 취소
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="text-center space-y-3 py-4 lg:py-8">
+                    <div className="inline-block p-4 bg-rose-100 rounded-full mb-2 animate-bounce shadow-sm">
+                      <CheckCircle2 className="w-10 h-10 text-rose-500" />
+                    </div>
+                    <div>
+                      {myRecord.location && <p className="text-stone-400 text-2xl mb-1">{myRecord.location}</p>}
+                      <p className="text-3xl font-bold text-stone-700">
+                        <span className="text-rose-500 text-4xl">{myRecord.name}</span> 선생님은
+                      </p>
+                      {/* ✨ 시간 뱃지 사이즈를 줄였습니다 */}
+                      <p className="text-2xl font-black mt-3 text-stone-800 bg-rose-50 inline-block px-5 py-2 rounded-2xl border border-rose-100 font-date shadow-sm">
+                        {myRecord.time} 퇴근 예정
+                      </p>
+                    </div>
+
+                    {amILatest && (
+                      <div className="mt-5 mb-2">
+                        {/* ✨ 문단속 뱃지 사이즈를 줄였습니다 */}
+                        <span className="bg-rose-500 text-white font-date font-bold text-xl px-5 py-2 rounded-full animate-pulse inline-block shadow-md">
+                          🚨 문단속 담당 예정
+                        </span>
+                      </div>
+                    )}
+                    
+                    <div className="flex gap-4 pt-6 border-t-2 border-dashed border-rose-100 mt-6">
+                      <button 
+                        onClick={() => {
+                          setName(myRecord.name);
+                          setLocation(myRecord.location);
+                          setContact(myRecord.contact || '');
+                          setMemo(myRecord.memo || '');
+                          const [h, m] = myRecord.time.split(':');
+                          setHour(h);
+                          setMinute(m);
+                          setIsEditing(true);
+                        }}
+                        className="flex-1 flex items-center justify-center gap-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-600 border border-emerald-200 font-bold text-3xl pt-4 pb-3 rounded-2xl transition-colors"
+                      >
+                        <Edit2 className="w-5 h-5" />
+                        수정
+                      </button>
+                      <button 
+                        onClick={handleLeave}
+                        className="flex-1 flex items-center justify-center gap-2 bg-rose-500 hover:bg-rose-600 text-white font-bold text-3xl pt-4 pb-3 rounded-2xl shadow-md transition-colors"
+                      >
+                        <LogOut className="w-5 h-5" />
+                        퇴근!
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* 오른쪽: 현재 남은 사람 대시보드 */}
+              <div className="bg-white/95 backdrop-blur-sm rounded-[2rem] p-5 lg:p-6 shadow-xl border-4 border-orange-100/50 h-full">
+                <div className="flex items-center justify-between mb-5">
+                  <h2 className="text-3xl font-bold text-stone-700">👀 오늘의 야근 현황</h2>
+                  {/* ✨ 현재 인원 뱃지 사이즈를 줄였습니다 */}
+                  <span className="bg-orange-100 text-orange-600 px-4 py-1.5 rounded-full text-lg font-bold font-date shadow-sm">
+                    현재 {displayUsers.filter(u => !u.isLeft).length}명
+                  </span>
+                </div>
+
+                {displayUsers.length === 0 ? (
+                  <div className="text-center py-12 bg-orange-50/50 rounded-2xl border-2 border-dashed border-orange-200">
+                    <span className="text-4xl block mb-3">🎉</span>
+                    <p className="text-stone-500 font-bold text-3xl">아직 야근 등록한 선생님이 없어요!<br/>칼퇴를 기원합니다 ◡̈</p>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {displayUsers.map((user, index) => {
+                      const isLatest = !user.isLeft && user.time === latestTime;
+                      const colorClass = avatarColors[index % avatarColors.length];
+                      
+                      return (
+                        <div 
+                          key={user.id} 
+                          className={`flex items-start p-4 rounded-2xl transition-all ${
+                            user.isLeft ? 'bg-stone-50/60' : 
+                            isLatest ? 'bg-white border-2 border-orange-200 shadow-md transform scale-[1.01]' : 'bg-white border border-orange-100 shadow-sm'
+                          }`}
+                        >
+                          <div className="flex gap-4 w-full">
+                            <div className={`shrink-0 w-12 h-12 rounded-2xl flex items-center justify-center font-bold text-2xl border font-date mt-1 ${
+                              user.isLeft ? 'bg-stone-200 text-stone-400 border-stone-300' : colorClass
+                            }`}>
+                              {user.name.charAt(0)}
+                            </div>
+                            
+                            <div className="flex flex-col flex-1 justify-center">
+                              <div className="flex items-baseline gap-2 flex-wrap">
+                                <p className={`font-bold text-3xl ${user.isLeft ? 'text-stone-400 line-through decoration-2' : 'text-stone-700'}`}>
+                                  {user.name}
+                                </p>
+                                {/* ✨ 현황 리스트 시간 사이즈를 2xl로 줄였습니다 */}
+                                <p className={`font-black font-date text-2xl tracking-tight ${user.isLeft ? 'text-stone-400 line-through decoration-2' : isLatest ? 'text-rose-500' : 'text-stone-500'}`}>
+                                  {user.time}
+                                </p>
+                                {user.isLeft && user.leaveTime && (
+                                  <p className="font-bold font-date text-lg text-stone-500">
+                                    ({user.leaveTime} 퇴근)
+                                  </p>
+                                )}
+                                {isLatest && !user.isLeft && (
+                                  <span className="flex items-center gap-1 text-xs bg-rose-500 text-white px-2.5 py-0.5 rounded-full font-bold shadow-sm animate-pulse font-date ml-1 self-center">
+                                    최종 담당
+                                  </span>
+                                )}
+                              </div>
+                              
+                              {(user.location || user.contact || user.memo) && (
+                                <div className="flex flex-col items-start gap-1 mt-1.5">
+                                  {(user.location || user.contact) && (
+                                    <p className={`text-2xl font-medium leading-none ${user.isLeft ? 'text-stone-400' : 'text-stone-500'}`}>
+                                      {user.location} {user.location && user.contact && ' | '}
+                                      {user.contact && <span className="text-stone-400 text-xl">📞 {user.contact}</span>}
+                                    </p>
+                                  )}
+                                  {user.memo && (
+                                    <p className={`text-2xl mt-1 font-medium inline-block px-3 py-1 rounded-lg border ${
+                                      user.isLeft ? 'bg-stone-100 text-stone-400 border-stone-200' : 'bg-rose-50 text-rose-500 border-rose-100'
+                                    }`}>
+                                      {user.memo}
+                                    </p>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+                
+                {displayUsers.filter(u => !u.isLeft).length > 0 && (
+                  <div className="mt-5 p-4 bg-orange-50/80 rounded-xl flex items-start gap-3 text-stone-600 text-2xl border border-orange-100 shadow-sm">
+                    <AlertCircle className="w-7 h-7 text-yellow-500 shrink-0 mt-0.5" />
+                    <p><strong>📢 최종담당 교직원</strong>은 꼭 전원 차단, 세콤 셋팅 부탁드립니다. 🚨</p>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* 지난 내역 보기 모달창 */}
+          {showHistory && (
+            <div className="fixed inset-0 bg-stone-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+              <div className="bg-white rounded-[2rem] p-6 lg:p-8 max-w-2xl w-full shadow-2xl relative animate-in fade-in zoom-in duration-200 border-4 border-rose-100 max-h-[85vh] flex flex-col">
+                <button 
+                  onClick={() => setShowHistory(false)}
+                  className="absolute top-5 right-5 text-stone-400 hover:text-stone-600 bg-stone-100 rounded-full p-2 z-10 transition-colors"
+                >
+                  <X className="w-6 h-6" />
+                </button>
+                <div className="text-center pb-5 pt-2 border-b-2 border-stone-100 shrink-0">
+                  <h3 className="text-4xl font-bold text-stone-700">지난 내역 보기</h3>
+                </div>
+                
+                <div className="overflow-y-auto flex-1 py-4 px-2 lg:px-4 mt-2">
+                  {!SCRIPT_URL ? (
+                    <div className="text-center py-6">
+                      <div className="text-5xl mb-4">📊</div>
+                      <p className="text-3xl text-stone-500 leading-relaxed bg-stone-50 p-4 rounded-xl mt-4">
+                        아직 <strong className="text-emerald-500">구글 시트</strong>가<br/>연결되지 않았습니다!
+                      </p>
+                    </div>
+                  ) : isLoadingHistory ? (
+                    <div className="text-center py-12 text-stone-400 font-bold text-3xl animate-pulse">
+                      시트에서 기록을 불러오는 중... 🔍
+                    </div>
+                  ) : pastRecords.length === 0 ? (
+                    <div className="text-center py-12 text-stone-400 font-bold text-3xl">
+                      아직 저장된 과거 기록이 없습니다.
+                    </div>
+                  ) : (
+                    <div className="space-y-1">
+                      {pastRecords.map((record, i) => {
+                        const isLeft = record.status.includes('퇴근');
+                        const displayTime = isLeft ? record.status.split(' ')[0] : formatShortTime(record.time);
+                        
+                        return (
+                          // 🔥 날짜, 이름, 시간 모두 이름과 똑같은 폰트(강원교육체)로, 2xl 사이즈로 통일했습니다. 
+                          <div key={i} className="flex items-center justify-between py-2 lg:py-3 border-b border-stone-100 last:border-0 hover:bg-rose-50/50 transition-colors px-2 rounded-xl">
+                            <div className="flex items-center gap-2 lg:gap-4 w-full">
+                              <span className="text-2xl text-stone-400 w-[110px] shrink-0 text-left">{formatShortDate(record.date)}</span>
+                              <span className="text-2xl font-bold text-stone-700 w-[70px] shrink-0 truncate">{record.name}</span>
+                              <span className={`text-2xl tracking-tight w-[60px] shrink-0 text-center ${isLeft ? 'text-stone-400' : 'text-rose-500'}`}>
+                                {displayTime}
+                              </span>
+                              
+                              <div className="flex-1 flex justify-end">
+                                <span className={`text-xl font-bold px-3 py-1 rounded-full shrink-0 shadow-sm ${
+                                  isLeft ? 'bg-stone-100 text-stone-500' : 'bg-rose-100 text-rose-500'
+                                }`}>
+                                  {isLeft ? '퇴근완료' : '근무중'}
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+
+                <button 
+                  onClick={() => setShowHistory(false)}
+                  className="w-full mt-5 bg-stone-800 text-white font-bold text-4xl pt-5 pb-4 rounded-2xl hover:bg-stone-700 transition-colors shrink-0 shadow-md"
+                >
+                  닫기
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    const root = createRoot(document.getElementById('root'));
+    root.render(<App />);
+  </script>
+</body>
+</html>
