@@ -223,9 +223,10 @@
       const safeRecords = Array.isArray(records) ? records : [];
       const safePastRecords = Array.isArray(pastRecords) ? pastRecords : [];
 
-      // ✨ 동명이인 구분 자동완성 로직
+      // ✨ 동명이인 구분 자동완성 로직 (수정 모드일 때는 아예 안 뜨게 차단!)
       useEffect(() => {
-        if (name && name.length >= 1) {
+        // isEditing이 false일 때만 자동완성 창 띄우기!
+        if (name && name.length >= 1 && !isEditing) {
           const allSources = [
             ...safeRecords.map(r => ({ name: r.name, location: r.location, contact: r.contact, todayId: r.isLeft ? null : r.id })),
             ...safePastRecords.map(r => ({ name: r.name, location: r.location, contact: r.contact, todayId: null })),
@@ -251,7 +252,7 @@
         } else {
           setSuggestions([]);
         }
-      }, [name, safeRecords, safePastRecords, userMemory]);
+      }, [name, safeRecords, safePastRecords, userMemory, isEditing]);
 
       const handleSelectSuggestion = (person) => {
         setName(person.name || '');
