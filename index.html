@@ -60,8 +60,9 @@
       }, []);
       const minuteOptions = ['00', '10', '20', '30', '40', '50'];
 
-      // ✨ 서버 데이터 정제 (5-1 등이 날짜로 변환된 것 복구)
+      // ✨ 서버 데이터 정제 (5-1 등이 날짜로 변환된 것 복구 및 방어 코드)
       const sanitizeServerData = (data) => {
+        if (!Array.isArray(data)) return [];
         return data.map(r => {
           let locStr = r.location ? String(r.location).replace(/^'/, '') : '';
           if (locStr.includes('T') && (locStr.endsWith('Z') || locStr.includes('+09:00'))) {
@@ -106,23 +107,25 @@
                 }
                 return false;
               }).map(r => {
-                const isLeft = String(r.status).includes('퇴근');
+                const isLeft = String(r.status || '').includes('퇴근');
                 const leaveTime = isLeft ? String(r.status).split(' ')[0] : null;
                 
-                let timeStr = String(r.time);
+                let timeStr = String(r.time || '');
                 if (timeStr.includes('T')) {
                   const d = new Date(timeStr);
-                  timeStr = `${d.getHours().toString().padStart(2, '0')}:${d.getMinutes().toString().padStart(2, '0')}`;
+                  if (!isNaN(d.getTime())) {
+                    timeStr = `${d.getHours().toString().padStart(2, '0')}:${d.getMinutes().toString().padStart(2, '0')}`;
+                  }
                 }
 
                 return {
                   id: String(r.id),
-                  name: String(r.name),
+                  name: String(r.name || ''),
                   time: timeStr,
                   contact: String(r.contact || ''),
-                  location: r.location,
+                  location: r.location || '',
                   memo: r.memo || '',
-                  status: r.status,
+                  status: r.status || '',
                   isLeft: isLeft,
                   leaveTime: leaveTime
                 };
@@ -130,9 +133,11 @@
 
               setRecords(todayRecords);
               
+              // ✨ 백지 에러를 발생시킨 주범 완벽 해결: 
+              // 어제 기록 아이디가 캐시에 남아있으면 미련 없이 삭제!
               if (savedMyId) {
                 const myServerStatus = todayRecords.find(tr => tr.id === savedMyId);
-                if (myServerStatus && myServerStatus.isLeft) {
+                if (!myServerStatus || myServerStatus.isLeft) {
                   setMyRecordId(null);
                   localStorage.removeItem('myRecordId');
                 }
@@ -149,15 +154,14 @@
       // ✨ 동명이인 구분 자동완성 로직
       useEffect(() => {
         if (name && name.length >= 1) {
-          // 전체 데이터(과거+오늘+메모리)에서 고유 인물 목록 추출 (이름+교실 조합)
           const allSources = [
             ...records.map(r => ({ name: r.name, location: r.location, contact: r.contact, todayId: r.isLeft ? null : r.id })),
             ...pastRecords.map(r => ({ name: r.name, location: r.location, contact: r.contact, todayId: null })),
             ...Object.keys(userMemory).map(k => ({ name: k, location: userMemory[k].location, contact: userMemory[k].contact, todayId: null }))
           ];
 
-          // 이름이 포함된 사람들 필터링 및 중복 제거
-          const filtered = allSources.filter(p => p.name.includes(name));
+          // ✨ 에러 방어: p.name이 빈칸이더라도 앱이 뻗지 않도록 String() 처리
+          const filtered = allSources.filter(p => p.name && String(p.name).includes(name));
           
           const uniquePeople = [];
           const seen = new Set();
@@ -170,20 +174,18 @@
             }
           });
 
-          setSuggestions(uniquePeople.slice(0, 5)); // 최대 5개까지만 보여줌
+          setSuggestions(uniquePeople.slice(0, 5));
         } else {
           setSuggestions([]);
         }
       }, [name, records, pastRecords, userMemory]);
 
-      // 자동완성 항목 클릭 시
       const handleSelectSuggestion = (person) => {
-        setName(person.name);
+        setName(person.name || '');
         setLocation(person.location || '');
         setContact(person.contact || '');
         setSuggestions([]);
 
-        // ✨ 핵심: 오늘 등록된 기록이 있다면, 해당 기록의 ID를 내 폰으로 가져옴 (기기 간 연동 해결)
         if (person.todayId) {
           setMyRecordId(person.todayId);
           localStorage.setItem('myRecordId', person.todayId);
@@ -247,7 +249,6 @@
         setContact(formattedContact); 
         setIsEditing(false);
 
-        // 구글 시트로 전송 (교실 번호 앞에도 따옴표를 붙여 일반 텍스트로 보냅니다!)
         sendToGoogleSheet(actionType, {
           id: currentRecord.id,
           date: dateString,
@@ -304,8 +305,10 @@
         if (!dateStr) return '';
         if (String(dateStr).includes('T')) {
           const d = new Date(dateStr);
-          const dayNames = ['일', '월', '화', '수', '목', '금', '토'];
-          return `${d.getFullYear().toString().slice(2)}.${d.getMonth() + 1}.${d.getDate()}(${dayNames[d.getDay()]})`;
+          if (!isNaN(d.getTime())) {
+            const dayNames = ['일', '월', '화', '수', '목', '금', '토'];
+            return `${d.getFullYear().toString().slice(2)}.${d.getMonth() + 1}.${d.getDate()}(${dayNames[d.getDay()]})`;
+          }
         }
         const regex = /(\d{4})년\s*(\d{1,2})월\s*(\d{1,2})일\s*(.)요일/;
         const match = String(dateStr).match(regex);
@@ -316,7 +319,9 @@
         if (!timeStr) return '';
         if (String(timeStr).includes('T')) {
           const d = new Date(timeStr);
-          return `${d.getHours().toString().padStart(2, '0')}:${d.getMinutes().toString().padStart(2, '0')}`;
+          if (!isNaN(d.getTime())) {
+            return `${d.getHours().toString().padStart(2, '0')}:${d.getMinutes().toString().padStart(2, '0')}`;
+          }
         }
         return timeStr;
       };
@@ -325,16 +330,19 @@
         const activeRecords = records.filter(r => !r.isLeft);
         if (activeRecords.length === 0) return null;
         const timesInMinutes = activeRecords.map(r => {
-          const [h, m] = r.time.split(':').map(Number);
-          return h * 60 + m;
+          const timeVal = r.time || '00:00';
+          const [h, m] = String(timeVal).split(':').map(Number);
+          return (h || 0) * 60 + (m || 0);
         });
         const maxTime = Math.max(...timesInMinutes);
         return `${Math.floor(maxTime / 60).toString().padStart(2, '0')}:${(maxTime % 60).toString().padStart(2, '0')}`;
       }, [records]);
 
       const myRecord = records.find(r => r.id === myRecordId);
-      const displayUsers = [...records].sort((a, b) => a.time.localeCompare(b.time));
-      const showForm = !myRecordId || myRecord?.isLeft || isEditing;
+      const displayUsers = [...records].sort((a, b) => String(a.time || '').localeCompare(String(b.time || '')));
+      
+      // ✨ 핵심 방어벽: 내 기록(myRecord)이 없으면 무조건 폼을 띄워 하얀 화면 에러 방지!
+      const showForm = !myRecord || myRecord.isLeft || isEditing;
       const amILatest = myRecord && !myRecord.isLeft && myRecord.time === latestTime;
 
       const avatarColors = [
@@ -376,7 +384,6 @@
                     </h2>
                     
                     <div className="space-y-3">
-                      {/* 이름 입력 및 자동완성 목록 */}
                       <div className="relative">
                         <div className="flex bg-rose-50/50 rounded-2xl border-2 border-rose-100 overflow-hidden focus-within:border-rose-300 focus-within:bg-white transition-all">
                           <div className="px-4 flex items-center bg-rose-100/50 text-rose-400"><User className="w-5 h-5" /></div>
@@ -389,7 +396,6 @@
                             onFocus={() => suggestions.length > 0}
                           />
                         </div>
-                        {/* ✨ 자동완성 추천 목록창 */}
                         {suggestions.length > 0 && (
                           <div className="absolute top-full left-0 right-0 mt-2 bg-white rounded-2xl shadow-2xl border-2 border-rose-100 z-50 overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200">
                             <div className="p-2 bg-rose-50/50 text-rose-400 text-xs font-bold px-4 py-1 flex items-center gap-1">
@@ -457,7 +463,16 @@
                     </div>
                     {amILatest && <div className="mt-5 mb-2"><span className="bg-rose-500 text-white font-date font-bold text-sm px-4 py-1.5 rounded-full animate-pulse inline-block shadow-md">🚨 문단속 담당 예정</span></div>}
                     <div className="flex gap-4 pt-6 border-t-2 border-dashed border-rose-100 mt-6">
-                      <button onClick={() => { setName(myRecord.name); setLocation(myRecord.location); setContact(myRecord.contact); setMemo(myRecord.memo); const [h, m] = myRecord.time.split(':'); setHour(h); setMinute(m); setIsEditing(true); }} className="flex-1 flex items-center justify-center gap-2 bg-emerald-50 text-emerald-600 border border-emerald-200 font-bold text-lg py-3 rounded-2xl"><Edit2 className="w-5 h-5" /> 수정</button>
+                      <button onClick={() => { 
+                        setName(myRecord.name || ''); 
+                        setLocation(myRecord.location || ''); 
+                        setContact(myRecord.contact || ''); 
+                        setMemo(myRecord.memo || ''); 
+                        const timeStr = myRecord.time || '00:00';
+                        const [h, m] = timeStr.split(':'); 
+                        setHour(h || '09'); setMinute(m || '00'); 
+                        setIsEditing(true); 
+                      }} className="flex-1 flex items-center justify-center gap-2 bg-emerald-50 text-emerald-600 border border-emerald-200 font-bold text-lg py-3 rounded-2xl"><Edit2 className="w-5 h-5" /> 수정</button>
                       <button onClick={handleLeave} className="flex-1 flex items-center justify-center gap-2 bg-rose-500 text-white font-bold text-lg py-3 rounded-2xl shadow-md"><LogOut className="w-5 h-5" /> 퇴근!</button>
                     </div>
                   </div>
@@ -478,7 +493,7 @@
                       return (
                         <div key={user.id} className={`flex items-start p-4 rounded-2xl transition-all ${user.isLeft ? 'bg-stone-50/60' : isLatest ? 'bg-white border-2 border-orange-200 shadow-md transform scale-[1.01]' : 'bg-white border border-orange-100 shadow-sm'}`}>
                           <div className="flex gap-4 w-full">
-                            <div className={`shrink-0 w-12 h-12 rounded-2xl flex items-center justify-center font-bold text-xl border font-date mt-0.5 ${user.isLeft ? 'bg-stone-200 text-stone-400 border-stone-300' : avatarColors[index % avatarColors.length]}`}>{user.name.charAt(0)}</div>
+                            <div className={`shrink-0 w-12 h-12 rounded-2xl flex items-center justify-center font-bold text-xl border font-date mt-0.5 ${user.isLeft ? 'bg-stone-200 text-stone-400 border-stone-300' : avatarColors[index % avatarColors.length]}`}>{user.name ? user.name.charAt(0) : '?'}</div>
                             <div className="flex flex-col flex-1 justify-center">
                               <div className="flex items-baseline gap-2 flex-wrap mb-1">
                                 <p className={`font-bold text-lg lg:text-xl ${user.isLeft ? 'text-stone-400 line-through decoration-2' : 'text-stone-700'}`}>{user.name}</p>
@@ -518,7 +533,7 @@
                   {!SCRIPT_URL ? <div className="text-center py-6"><div className="text-4xl mb-4">📊</div><p className="text-lg text-stone-500">시트가 연결되지 않았습니다!</p></div> : isLoadingHistory ? <div className="text-center py-12 text-stone-400 font-bold text-xl animate-pulse">기록을 불러오는 중... 🔍</div> : pastRecords.length === 0 ? <div className="text-center py-12 text-stone-400 font-bold text-xl">저장된 기록이 없습니다.</div> : (
                     <div className="space-y-1">
                       {pastRecords.map((record, i) => {
-                        const isLeft = String(record.status).includes('퇴근');
+                        const isLeft = String(record.status || '').includes('퇴근');
                         const displayTime = isLeft ? String(record.status).split(' ')[0] : formatShortTime(record.time);
                         return (
                           <div key={i} className="flex items-center justify-between py-2 border-b border-stone-100 last:border-0 hover:bg-rose-50/50 px-1 rounded-xl">
