@@ -223,10 +223,9 @@
       const safeRecords = Array.isArray(records) ? records : [];
       const safePastRecords = Array.isArray(pastRecords) ? pastRecords : [];
 
-      // ✨ 동명이인 구분 자동완성 로직 (수정 모드일 때는 아예 안 뜨게 차단!)
+      // ✨ 동명이인 구분 자동완성 로직
       useEffect(() => {
-        // isEditing이 false일 때만 자동완성 창 띄우기!
-        if (name && name.length >= 1 && !isEditing) {
+        if (name && name.length >= 1) {
           const allSources = [
             ...safeRecords.map(r => ({ name: r.name, location: r.location, contact: r.contact, todayId: r.isLeft ? null : r.id })),
             ...safePastRecords.map(r => ({ name: r.name, location: r.location, contact: r.contact, todayId: null })),
@@ -252,8 +251,9 @@
         } else {
           setSuggestions([]);
         }
-      }, [name, safeRecords, safePastRecords, userMemory, isEditing]);
+      }, [name, safeRecords, safePastRecords, userMemory]);
 
+      // ✨ 불편하셨던 부분 핵심 픽스!
       const handleSelectSuggestion = (person) => {
         setName(person.name || '');
         setLocation(person.location || '');
@@ -261,9 +261,22 @@
         setSuggestions([]);
 
         if (person.todayId) {
+          // 오늘 등록된 내역을 클릭한 경우, 기존 시간과 메모 정보도 같이 폼에 채워줍니다.
+          const existingRecord = safeRecords.find(r => r.id === person.todayId);
+          if (existingRecord) {
+            setMemo(existingRecord.memo || '');
+            const timeStr = existingRecord.time || '00:00';
+            const [h, m] = timeStr.split(':');
+            setHour(h || '09');
+            setMinute(m || '00');
+          }
+          
           setMyRecordId(person.todayId);
           localStorage.setItem('myRecordId', person.todayId);
-          setIsEditing(false); 
+          
+          // 원래 여기서 setIsEditing(false)가 되어 창이 닫혀버렸습니다.
+          // 이제는 true로 설정하여 작성 창(수정 폼)이 그대로 열려 있도록 유지합니다!
+          setIsEditing(true); 
         }
       };
 
