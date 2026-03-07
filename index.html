@@ -26,6 +26,21 @@
     // 🔥 구글 시트 URL
     const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzxtX__FhkSQj7MHiK_r6JJJeqVlyabzY_-bvSbcoXHXOjP-jI3_8bvG3ep9G0raK0T/exec"; 
 
+    // ✨ 강력한 에러 방어막 함수들 (찌꺼기 데이터로 인한 흰 화면 방지)
+    const getSafeArray = (key) => {
+      try {
+        const val = JSON.parse(localStorage.getItem(key));
+        return Array.isArray(val) ? val : [];
+      } catch(e) { return []; }
+    };
+    
+    const getSafeObject = (key) => {
+      try {
+        const val = JSON.parse(localStorage.getItem(key));
+        return (val && typeof val === 'object' && !Array.isArray(val)) ? val : {};
+      } catch(e) { return {}; }
+    };
+
     function App() {
       const [currentDate, setCurrentDate] = useState(new Date());
       const [name, setName] = useState('');
@@ -78,10 +93,14 @@
       // ✨ 서버 및 로컬 데이터 동기화
       useEffect(() => {
         const loadInitialData = async () => {
-          const savedMemory = JSON.parse(localStorage.getItem('userMemory')) || {};
+          // 안전하게 로컬 스토리지 불러오기 (에러 방어막 적용)
+          const savedMemory = getSafeObject('userMemory');
           const savedMyId = localStorage.getItem('myRecordId');
           setUserMemory(savedMemory);
-          if (savedMyId) setMyRecordId(savedMyId);
+          
+          if (savedMyId && savedMyId !== "null" && savedMyId !== "undefined") {
+            setMyRecordId(savedMyId);
+          }
           setHour(hourOptions[0]);
 
           if (SCRIPT_URL) {
@@ -101,9 +120,11 @@
                 if (dStr.includes(todayStr) || dStr.includes(dateString)) return true;
                 if (dStr.includes('T')) {
                   const d = new Date(dStr);
-                  return d.getFullYear() === currentDate.getFullYear() &&
-                         d.getMonth() === currentDate.getMonth() &&
-                         d.getDate() === currentDate.getDate();
+                  if (!isNaN(d.getTime())) {
+                    return d.getFullYear() === currentDate.getFullYear() &&
+                           d.getMonth() === currentDate.getMonth() &&
+                           d.getDate() === currentDate.getDate();
+                  }
                 }
                 return false;
               }).map(r => {
@@ -143,21 +164,29 @@
                 }
               }
             } catch (e) {
-              console.log("서버 데이터 로드 실패", e);
+              console.error("서버 데이터 로드 실패", e);
+              // 통신 실패 시에도 뻗지 않고 빈 화면 대신 안전한 데이터 로드
+              setRecords(getSafeArray('schoolRecords'));
             }
+          } else {
+            setRecords(getSafeArray('schoolRecords'));
           }
         };
 
         loadInitialData();
       }, [hourOptions]);
 
+      // 배열이 아닐 경우 뻗지 않도록 무조건 배열로 강제 보장하는 방어막!
+      const safeRecords = Array.isArray(records) ? records : [];
+      const safePastRecords = Array.isArray(pastRecords) ? pastRecords : [];
+
       // ✨ 동명이인 구분 자동완성 로직
       useEffect(() => {
         if (name && name.length >= 1) {
           const allSources = [
-            ...records.map(r => ({ name: r.name, location: r.location, contact: r.contact, todayId: r.isLeft ? null : r.id })),
-            ...pastRecords.map(r => ({ name: r.name, location: r.location, contact: r.contact, todayId: null })),
-            ...Object.keys(userMemory).map(k => ({ name: k, location: userMemory[k].location, contact: userMemory[k].contact, todayId: null }))
+            ...safeRecords.map(r => ({ name: r.name, location: r.location, contact: r.contact, todayId: r.isLeft ? null : r.id })),
+            ...safePastRecords.map(r => ({ name: r.name, location: r.location, contact: r.contact, todayId: null })),
+            ...Object.keys(userMemory).map(k => ({ name: k, location: userMemory[k]?.location, contact: userMemory[k]?.contact, todayId: null }))
           ];
 
           // ✨ 에러 방어: p.name이 빈칸이더라도 앱이 뻗지 않도록 String() 처리
@@ -178,7 +207,7 @@
         } else {
           setSuggestions([]);
         }
-      }, [name, records, pastRecords, userMemory]);
+      }, [name, safeRecords, safePastRecords, userMemory]);
 
       const handleSelectSuggestion = (person) => {
         setName(person.name || '');
@@ -234,12 +263,12 @@
           recordId = myRecordId;
           actionType = 'update';
           currentRecord = { id: recordId, name, location, contact: formattedContact, memo, time: timeString, isLeft: false };
-          updatedRecords = records.map(r => r.id === myRecordId ? currentRecord : r);
+          updatedRecords = safeRecords.map(r => r.id === myRecordId ? currentRecord : r);
         } else {
           recordId = Date.now().toString();
           actionType = 'save';
           currentRecord = { id: recordId, name, location: location || '', contact: formattedContact || '', memo: memo || '', time: timeString, isLeft: false };
-          updatedRecords = [...records, currentRecord];
+          updatedRecords = [...safeRecords, currentRecord];
           setMyRecordId(recordId);
           localStorage.setItem('myRecordId', recordId);
         }
@@ -264,8 +293,8 @@
       const handleLeave = () => {
         const now = new Date();
         const leaveTimeStr = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
-        const myCurrentRecord = records.find(r => r.id === myRecordId);
-        const updatedRecords = records.map(r => r.id === myRecordId ? { ...r, isLeft: true, leaveTime: leaveTimeStr } : r);
+        const myCurrentRecord = safeRecords.find(r => r.id === myRecordId);
+        const updatedRecords = safeRecords.map(r => r.id === myRecordId ? { ...r, isLeft: true, leaveTime: leaveTimeStr } : r);
         
         setRecords(updatedRecords);
         localStorage.setItem('schoolRecords', JSON.stringify(updatedRecords));
@@ -327,7 +356,8 @@
       };
 
       const latestTime = useMemo(() => {
-        const activeRecords = records.filter(r => !r.isLeft);
+        if (safeRecords.length === 0) return null;
+        const activeRecords = safeRecords.filter(r => !r.isLeft);
         if (activeRecords.length === 0) return null;
         const timesInMinutes = activeRecords.map(r => {
           const timeVal = r.time || '00:00';
@@ -336,10 +366,10 @@
         });
         const maxTime = Math.max(...timesInMinutes);
         return `${Math.floor(maxTime / 60).toString().padStart(2, '0')}:${(maxTime % 60).toString().padStart(2, '0')}`;
-      }, [records]);
+      }, [safeRecords]);
 
-      const myRecord = records.find(r => r.id === myRecordId);
-      const displayUsers = [...records].sort((a, b) => String(a.time || '').localeCompare(String(b.time || '')));
+      const myRecord = safeRecords.find(r => r.id === myRecordId);
+      const displayUsers = [...safeRecords].sort((a, b) => String(a.time || '').localeCompare(String(b.time || '')));
       
       // ✨ 핵심 방어벽: 내 기록(myRecord)이 없으면 무조건 폼을 띄워 하얀 화면 에러 방지!
       const showForm = !myRecord || myRecord.isLeft || isEditing;
@@ -493,7 +523,7 @@
                       return (
                         <div key={user.id} className={`flex items-start p-4 rounded-2xl transition-all ${user.isLeft ? 'bg-stone-50/60' : isLatest ? 'bg-white border-2 border-orange-200 shadow-md transform scale-[1.01]' : 'bg-white border border-orange-100 shadow-sm'}`}>
                           <div className="flex gap-4 w-full">
-                            <div className={`shrink-0 w-12 h-12 rounded-2xl flex items-center justify-center font-bold text-xl border font-date mt-0.5 ${user.isLeft ? 'bg-stone-200 text-stone-400 border-stone-300' : avatarColors[index % avatarColors.length]}`}>{user.name ? user.name.charAt(0) : '?'}</div>
+                            <div className={`shrink-0 w-12 h-12 rounded-2xl flex items-center justify-center font-bold text-xl border font-date mt-0.5 ${user.isLeft ? 'bg-stone-200 text-stone-400 border-stone-300' : avatarColors[index % avatarColors.length]}`}>{String(user.name || '?').charAt(0)}</div>
                             <div className="flex flex-col flex-1 justify-center">
                               <div className="flex items-baseline gap-2 flex-wrap mb-1">
                                 <p className={`font-bold text-lg lg:text-xl ${user.isLeft ? 'text-stone-400 line-through decoration-2' : 'text-stone-700'}`}>{user.name}</p>
@@ -530,9 +560,9 @@
                 <button onClick={() => setShowHistory(false)} className="absolute top-5 right-5 text-stone-400 bg-stone-100 rounded-full p-2"><X className="w-5 h-5 lg:w-6 lg:h-6" /></button>
                 <div className="text-center pb-5 pt-2 border-b-2 border-stone-100 shrink-0"><h3 className="text-2xl font-bold text-stone-700">지난 내역 보기</h3></div>
                 <div className="overflow-y-auto flex-1 py-4 px-2 lg:px-4 mt-2">
-                  {!SCRIPT_URL ? <div className="text-center py-6"><div className="text-4xl mb-4">📊</div><p className="text-lg text-stone-500">시트가 연결되지 않았습니다!</p></div> : isLoadingHistory ? <div className="text-center py-12 text-stone-400 font-bold text-xl animate-pulse">기록을 불러오는 중... 🔍</div> : pastRecords.length === 0 ? <div className="text-center py-12 text-stone-400 font-bold text-xl">저장된 기록이 없습니다.</div> : (
+                  {!SCRIPT_URL ? <div className="text-center py-6"><div className="text-4xl mb-4">📊</div><p className="text-lg text-stone-500">시트가 연결되지 않았습니다!</p></div> : isLoadingHistory ? <div className="text-center py-12 text-stone-400 font-bold text-xl animate-pulse">기록을 불러오는 중... 🔍</div> : safePastRecords.length === 0 ? <div className="text-center py-12 text-stone-400 font-bold text-xl">저장된 기록이 없습니다.</div> : (
                     <div className="space-y-1">
-                      {pastRecords.map((record, i) => {
+                      {safePastRecords.map((record, i) => {
                         const isLeft = String(record.status || '').includes('퇴근');
                         const displayTime = isLeft ? String(record.status).split(' ')[0] : formatShortTime(record.time);
                         return (
