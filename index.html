@@ -5,26 +5,20 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>✨ 홍북초 야근 현황 ✨</title>
   
-  <!-- Tailwind CSS 로드 -->
   <script src="https://cdn.tailwindcss.com"></script>
   
-  <!-- Babel (브라우저에서 React 코드를 읽을 수 있게 해주는 도구) -->
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 </head>
 <body>
-  <!-- 🤫 all copyright reserved BOHAE -->
-  
-  <!-- 앱이 그려질 도화지 -->
   <div id="root"></div>
 
-  <!-- React 및 앱 로직 시작 -->
   <script type="text/babel" data-type="module">
     import React, { useState, useEffect, useMemo } from 'https://esm.sh/react@18';
     import { createRoot } from 'https://esm.sh/react-dom@18/client';
     import { Clock, MapPin, User, LogOut, Edit2, AlertCircle, CheckCircle2, Star, ChevronLeft, X, MessageSquare, Phone } from 'https://esm.sh/lucide-react@0.292.0';
 
     // 🔥 구글 시트 URL
-    const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzxtX__FhkSQj7MHiK_r6JJJeqVlyabzY_-bvSbcoXHXOjP-jI3_8bvG3ep9G0raK0T/exec"; 
+    const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbw1MX6iZyqQ6dM1UfLqzZtM4njLYR0ZxyCDWLvJO6NRuS3AWWICKrQvUe5zZUkDcpKr/exec"; 
 
     function App() {
       const [currentDate, setCurrentDate] = useState(new Date());
@@ -57,16 +51,79 @@
       }, []);
       const minuteOptions = ['00', '10', '20', '30', '40', '50'];
 
-      // 로컬 데이터 초기 불러오기
+      // ✨ 핵심 수정: 로컬 데이터뿐만 아니라 서버에서 접속한 '오늘'의 모든 현황을 가져와 동기화합니다.
       useEffect(() => {
-        const savedRecords = JSON.parse(localStorage.getItem('schoolRecords')) || [];
-        const savedMemory = JSON.parse(localStorage.getItem('userMemory')) || {};
-        const savedMyId = localStorage.getItem('myRecordId');
-        
-        setRecords(savedRecords);
-        setUserMemory(savedMemory);
-        if (savedMyId) setMyRecordId(savedMyId);
-        setHour(hourOptions[0]);
+        const loadInitialData = async () => {
+          const savedMemory = JSON.parse(localStorage.getItem('userMemory')) || {};
+          const savedMyId = localStorage.getItem('myRecordId');
+          setUserMemory(savedMemory);
+          if (savedMyId) setMyRecordId(savedMyId);
+          setHour(hourOptions[0]);
+
+          if (SCRIPT_URL) {
+            try {
+              const response = await fetch(SCRIPT_URL);
+              const data = await response.json();
+              
+              // 오늘 날짜 추출 (예: 2026년 3월 7일)
+              const todayStr = `${currentDate.getFullYear()}년 ${currentDate.getMonth() + 1}월 ${currentDate.getDate()}일`;
+
+              // 서버 데이터 중 오늘 데이터만 파싱해서 현재 현황판에 반영
+              const todayRecords = data.filter(r => {
+                if (!r.date) return false;
+                const dStr = String(r.date);
+                // 이미 시트가 날짜를 변환한 경우 방어 로직 포함
+                if (dStr.includes(todayStr) || dStr.includes(dateString)) return true;
+                if (dStr.includes('T')) {
+                  const d = new Date(dStr);
+                  return d.getFullYear() === currentDate.getFullYear() &&
+                         d.getMonth() === currentDate.getMonth() &&
+                         d.getDate() === currentDate.getDate();
+                }
+                return false;
+              }).map(r => {
+                const isLeft = String(r.status).includes('퇴근');
+                const leaveTime = isLeft ? String(r.status).split(' ')[0] : null;
+                
+                let timeStr = String(r.time);
+                if (timeStr.includes('T')) {
+                  const d = new Date(timeStr);
+                  timeStr = `${d.getHours().toString().padStart(2, '0')}:${d.getMinutes().toString().padStart(2, '0')}`;
+                }
+
+                return {
+                  id: String(r.id),
+                  name: String(r.name),
+                  time: timeStr,
+                  contact: r.contact || '',
+                  location: r.location || '',
+                  memo: r.memo || '',
+                  status: r.status,
+                  isLeft: isLeft,
+                  leaveTime: leaveTime
+                };
+              });
+
+              setRecords(todayRecords);
+              
+              // 혹시 서버에서는 이미 퇴근 처리됐는데 로컬 폰에 찌꺼기가 남아있으면 제거
+              if (savedMyId) {
+                const myServerStatus = todayRecords.find(tr => tr.id === savedMyId);
+                if (myServerStatus && myServerStatus.isLeft) {
+                  setMyRecordId(null);
+                  localStorage.removeItem('myRecordId');
+                }
+              }
+            } catch (e) {
+              console.log("서버에서 오늘 현황 불러오기 실패:", e);
+              setRecords(JSON.parse(localStorage.getItem('schoolRecords')) || []);
+            }
+          } else {
+            setRecords(JSON.parse(localStorage.getItem('schoolRecords')) || []);
+          }
+        };
+
+        loadInitialData();
       }, [hourOptions]);
 
       // 이름 기반 자동완성
@@ -677,6 +734,3 @@
   </script>
 </body>
 </html>
-
-
-
